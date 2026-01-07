@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(1100px 600px at 20% 10%, rgba(255, 208, 84, 0.28), transparent 55%),
+    radial-gradient(900px 500px at 80% 0%, rgba(255, 239, 194, 0.55), transparent 60%),
+    linear-gradient(180deg, #fbf8f0 0%, #f5efdc 100%);
+}
+
+::selection {
+  background: rgba(244, 170, 10, 0.35);
+}
