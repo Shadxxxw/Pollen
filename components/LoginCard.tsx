@@ -14,15 +14,29 @@ type Account = {
 
 type LoginResult =
   | { ok: true; accounts: Account[] }
-  | { ok: false; message: string };
+  | { ok: false; message: string; requiresSecurityQuestion?: boolean; question?: { id: string; libelle: string } };
+
+type ApiResponse = LoginResult & {
+  requiresSecurityQuestion?: boolean;
+  question?: { id: string; libelle: string };
+};
 
 export function LoginCard() {
   const [identifiant, setIdentifiant] = useState('');
   const [motdepasse, setMotdepasse] = useState('');
+  const [reponseQuestion, setReponseQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<LoginResult | null>(null);
+  const [securityQuestion, setSecurityQuestion] = useState<{ id: string; libelle: string } | null>(null);
 
-  const canSubmit = useMemo(() => identifiant.trim().length > 0 && motdepasse.length > 0 && !loading, [identifiant, motdepasse, loading]);
+  const canSubmit = useMemo(
+    () =>
+      identifiant.trim().length > 0 &&
+      motdepasse.length > 0 &&
+      !loading &&
+      (!securityQuestion || reponseQuestion.trim().length > 0),
+    [identifiant, motdepasse, loading, securityQuestion, reponseQuestion]
+  );
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -30,25 +44,54 @@ export function LoginCard() {
     setResult(null);
 
     try {
-      const res = await fetch('/api/ecoledirecte/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifiant, motdepasse })
-      });
+      if (securityQuestion) {
+        const res = await fetch('/api/ecoledirecte/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifiant, motdepasse, questionId: securityQuestion.id, reponse: reponseQuestion })
+        });
 
-      const json = (await res.json()) as LoginResult;
+        const json = (await res.json()) as ApiResponse;
 
-      if (!res.ok) {
-        setResult({ ok: false, message: 'message' in json ? json.message : 'Connexion impossible.' });
-        return;
+        if (!res.ok) {
+          setResult({ ok: false, message: 'message' in json ? json.message : 'Connexion impossible.' });
+          return;
+        }
+
+        setResult(json);
+        setSecurityQuestion(null);
+      } else {
+        const res = await fetch('/api/ecoledirecte/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifiant, motdepasse })
+        });
+
+        const json = (await res.json()) as ApiResponse;
+
+        if (!res.ok) {
+          setResult({ ok: false, message: 'message' in json ? json.message : 'Connexion impossible.' });
+          if (json.requiresSecurityQuestion && json.question) {
+            setSecurityQuestion(json.question);
+          }
+          return;
+        }
+
+        setResult(json);
       }
-
-      setResult(json);
     } catch {
       setResult({ ok: false, message: "Impossible d'atteindre le serveur. Réessaie." });
     } finally {
       setLoading(false);
     }
+  }
+
+  function resetForm() {
+    setResult(null);
+    setSecurityQuestion(null);
+    setReponseQuestion('');
+    setIdentifiant('');
+    setMotdepasse('');
   }
 
   return (
@@ -72,6 +115,14 @@ export function LoginCard() {
             Tes identifiants restent entre toi et EcoleDirecte : la connexion est faite côté serveur et le token est stocké dans un cookie
             <span className="font-medium"> httpOnly</span>.
           </p>
+
+          {securityQuestion && (
+            <div className="mt-3 rounded-xl border border-honey-300/60 bg-honey-50/80 px-3 py-2">
+              <p className="text-xs text-neutral-700">
+                EcoleDirecte demande une vérification supplémentaire. Réponds à la question pour te connecter.
+              </p>
+            </div>
+          )}
         </div>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
@@ -83,6 +134,7 @@ export function LoginCard() {
               autoComplete="username"
               className="mt-1 w-full rounded-xl border border-black/10 bg-white/75 px-3 py-2.5 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-honey-300 focus:ring-4 focus:ring-honey-200/50"
               placeholder="ex: 1234567"
+              disabled={loading || !!securityQuestion}
             />
           </label>
 
@@ -95,13 +147,38 @@ export function LoginCard() {
               autoComplete="current-password"
               className="mt-1 w-full rounded-xl border border-black/10 bg-white/75 px-3 py-2.5 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-honey-300 focus:ring-4 focus:ring-honey-200/50"
               placeholder="••••••••"
+              disabled={loading || !!securityQuestion}
             />
           </label>
 
+          {securityQuestion && (
+            <label className="block">
+              <span className="text-sm font-medium text-neutral-800">{securityQuestion.libelle}</span>
+              <input
+                value={reponseQuestion}
+                onChange={(e) => setReponseQuestion(e.target.value)}
+                autoComplete="off"
+                className="mt-1 w-full rounded-xl border border-black/10 bg-white/75 px-3 py-2.5 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-honey-300 focus:ring-4 focus:ring-honey-200/50"
+                placeholder="Ta réponse"
+                autoFocus
+              />
+            </label>
+          )}
+
           <div className="pt-1">
             <Button type="submit" disabled={!canSubmit} className="w-full">
-              {loading ? 'Connexion…' : 'Se connecter'}
+              {loading ? 'Connexion…' : securityQuestion ? 'Valider' : 'Se connecter'}
             </Button>
+            {securityQuestion && (
+              <button
+                type="button"
+                onClick={resetForm}
+                disabled={loading}
+                className="mt-2 w-full text-center text-sm text-neutral-600 underline decoration-neutral-400/50 underline-offset-2 hover:text-neutral-900 disabled:opacity-50"
+              >
+                Annuler et recommencer
+              </button>
+            )}
           </div>
         </form>
 
@@ -129,11 +206,7 @@ export function LoginCard() {
                   <form
                     action="/api/ecoledirecte/logout"
                     method="post"
-                    onSubmit={() => {
-                      setResult(null);
-                      setIdentifiant('');
-                      setMotdepasse('');
-                    }}
+                    onSubmit={resetForm}
                   >
                     <Button type="submit" variant="ghost" className="w-full">
                       Se déconnecter
